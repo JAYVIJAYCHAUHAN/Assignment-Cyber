@@ -1,0 +1,58 @@
+WITH voyage_data AS (
+    SELECT 
+        id,
+        event,
+        dateStamp,
+        timeStamp,
+        voyage_From,
+        lat,
+        lon,
+        imo_num,
+        voyage_Id,
+        allocatedVoyageId,
+        DATEADD(DAY, dateStamp, '1899-12-30') + timeStamp AS event_datetime
+    FROM voyages
+    WHERE imo_num = '9434761' AND voyage_Id = '6' AND allocatedVoyageId IS NULL
+),
+voyage_events AS (
+    SELECT
+        id,
+        event,
+        event_datetime,
+        voyage_From,
+        lat,
+        lon,
+        LEAD(event_datetime) OVER (ORDER BY event_datetime) AS next_event_datetime,
+        LAG(event_datetime) OVER (ORDER BY event_datetime) AS prev_event_datetime,
+        LEAD(voyage_From) OVER (ORDER BY event_datetime) AS next_voyage_From,
+        LAG(voyage_From) OVER (ORDER BY event_datetime) AS prev_voyage_From,
+        LEAD(lat) OVER (ORDER BY event_datetime) AS next_lat,
+        LEAD(lon) OVER (ORDER BY event_datetime) AS next_lon,
+        LAG(lat) OVER (ORDER BY event_datetime) AS prev_lat,
+        LAG(lon) OVER (ORDER BY event_datetime) AS prev_lon
+    FROM voyage_data
+)
+SELECT
+    id,
+    event,
+    event_datetime,
+    voyage_From,
+    lat,
+    lon,
+    CASE 
+        WHEN event = 'SOSP' THEN DATEDIFF(MINUTE, prev_event_datetime, event_datetime)
+        ELSE NULL
+    END AS port_stay_duration,
+    CASE 
+        WHEN event = 'EOSP' THEN DATEDIFF(MINUTE, event_datetime, next_event_datetime)
+        ELSE NULL
+    END AS sailing_time,
+    CASE 
+        WHEN event = 'SOSP' THEN 
+            111.045 * DEGREES(ACOS(COS(RADIANS(lat)) * COS(RADIANS(next_lat)) * COS(RADIANS(lon) - RADIANS(next_lon)) + SIN(RADIANS(lat)) * SIN(RADIANS(next_lat))))
+        ELSE NULL
+    END AS distance_travelled
+FROM 
+    voyage_events
+ORDER BY 
+    event_datetime;
